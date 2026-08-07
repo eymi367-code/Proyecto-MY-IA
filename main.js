@@ -1,12 +1,6 @@
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-// Modelos de respaldo (prueba en este orden)
-const MODELS = [
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-2.0-flash-lite"
-];
+// main.js
+// Ahora el frontend NO tiene ninguna API key. Llama a tu propio backend
+// (api/gemini.js), que es el único que conoce la key de Google.
 
 const chat = document.getElementById("chat");
 const input = document.getElementById("input");
@@ -20,44 +14,39 @@ function addMessage(text, type = "ai") {
   div.innerHTML = text;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+  return div;
 }
 
 async function askGemini(prompt) {
-  for (let model of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+  try {
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
 
-    const body = {
-      contents: [
-        {
-          parts: [{ text: prompt }]
-        }
-      ]
-    };
+    const data = await res.json();
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
+    if (!res.ok) {
+      console.error("Fallo del backend:", data);
 
-      const data = await res.json();
+      const detalle = data.attempts
+        ?.map((a) => `• ${a.model}: [${a.status ?? "sin status"}] ${a.message}`)
+        .join("<br>");
 
-      if (data.error) {
-        console.warn(`Error con ${model}:`, data.error.message);
-        continue; // Prueba el siguiente modelo
-      }
-
-      return data.candidates[0].content.parts[0].text;
-    } catch (err) {
-      console.warn(`Falló ${model}:`, err.message);
-      continue;
+      return `⚠️ No se pudo obtener respuesta.<br><br>${
+        detalle || data.error || "Error desconocido"
+      }<br><br>
+      Revisa tu cuota aquí: <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>`;
     }
-  }
 
-  return `⚠️ Se agotó la cuota de todos los modelos gratuitos.<br><br>
-  Espera unos minutos o revisa tu cuota aquí:<br>
-  <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>`;
+    console.log("Modelo usado:", data.modelUsed);
+
+    return data.text;
+  } catch (err) {
+    console.error("Error de red:", err);
+    return `⚠️ No se pudo conectar con el servidor.<br><br>${err.message}`;
+  }
 }
 
 async function sendMessage() {
@@ -67,14 +56,13 @@ async function sendMessage() {
   addMessage(text, "user");
   input.value = "";
 
-  addMessage("Pensando...", "ai");
+  const pensando = addMessage("Pensando...", "ai");
   const response = await askGemini(text);
 
-  chat.lastChild.remove();
+  pensando.remove();
   addMessage(response, response.includes("⚠️") ? "error" : "ai");
 }
 
-// Eventos
 sendBtn.addEventListener("click", sendMessage);
 input.addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
@@ -99,5 +87,4 @@ analyzeBtn.addEventListener("click", () => {
   sendMessage();
 });
 
-// Mensaje de bienvenida
 addMessage("¡Hola! Soy <strong>NeoRubi</strong> 🌸<br>¿En qué te puedo ayudar hoy?");
